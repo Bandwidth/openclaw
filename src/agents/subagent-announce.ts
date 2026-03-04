@@ -21,7 +21,11 @@ import {
   mergeDeliveryContext,
   normalizeDeliveryContext,
 } from "../utils/delivery-context.js";
-import { isDeliverableMessageChannel, isInternalMessageChannel } from "../utils/message-channel.js";
+import {
+  INTERNAL_MESSAGE_CHANNEL,
+  isDeliverableMessageChannel,
+  isInternalMessageChannel,
+} from "../utils/message-channel.js";
 import {
   buildAnnounceIdFromChildRun,
   buildAnnounceIdempotencyKey,
@@ -73,43 +77,6 @@ function resolveSubagentAnnounceTimeoutMs(cfg: ReturnType<typeof loadConfig>): n
     return DEFAULT_SUBAGENT_ANNOUNCE_TIMEOUT_MS;
   }
   return Math.min(Math.max(1, Math.floor(configured)), MAX_TIMER_SAFE_TIMEOUT_MS);
-}
-
-function buildCompletionDeliveryMessage(params: {
-  findings: string;
-  subagentName: string;
-  spawnMode?: SpawnSubagentMode;
-  outcome?: SubagentRunOutcome;
-  announceType?: SubagentAnnounceType;
-}): string {
-  const findingsText = params.findings.trim();
-  if (isAnnounceSkip(findingsText)) {
-    return "";
-  }
-  const hasFindings = findingsText.length > 0 && findingsText !== "(no output)";
-  // Cron completions are standalone messages — skip the subagent status header.
-  if (params.announceType === "cron job") {
-    return hasFindings ? findingsText : "";
-  }
-  const header = (() => {
-    if (params.outcome?.status === "error") {
-      return params.spawnMode === "session"
-        ? `❌ Subagent ${params.subagentName} failed this task (session remains active)`
-        : `❌ Subagent ${params.subagentName} failed`;
-    }
-    if (params.outcome?.status === "timeout") {
-      return params.spawnMode === "session"
-        ? `⏱️ Subagent ${params.subagentName} timed out on this task (session remains active)`
-        : `⏱️ Subagent ${params.subagentName} timed out`;
-    }
-    return params.spawnMode === "session"
-      ? `✅ Subagent ${params.subagentName} completed this task (session remains active)`
-      : `✅ Subagent ${params.subagentName} finished`;
-  })();
-  if (!hasFindings) {
-    return header;
-  }
-  return `${header}\n\n${findingsText}`;
 }
 
 function summarizeDeliveryError(error: unknown): string {
@@ -619,6 +586,12 @@ async function sendAnnounce(item: AnnounceQueueItem) {
       threadId: requesterIsSubagent ? undefined : threadId,
       deliver: !requesterIsSubagent,
       internalEvents: item.internalEvents,
+      inputProvenance: {
+        kind: "inter_session",
+        sourceSessionKey: item.sourceSessionKey,
+        sourceChannel: item.sourceChannel ?? INTERNAL_MESSAGE_CHANNEL,
+        sourceTool: item.sourceTool ?? "subagent_announce",
+      },
       idempotencyKey,
     },
     timeoutMs: announceTimeoutMs,
@@ -672,6 +645,9 @@ async function maybeQueueSubagentAnnounce(params: {
   steerMessage: string;
   summaryLine?: string;
   requesterOrigin?: DeliveryContext;
+  sourceSessionKey?: string;
+  sourceChannel?: string;
+  sourceTool?: string;
   internalEvents?: AgentInternalEvent[];
   signal?: AbortSignal;
 }): Promise<"steered" | "queued" | "none"> {
@@ -717,6 +693,9 @@ async function maybeQueueSubagentAnnounce(params: {
         enqueuedAt: Date.now(),
         sessionKey: canonicalKey,
         origin,
+        sourceSessionKey: params.sourceSessionKey,
+        sourceChannel: params.sourceChannel,
+        sourceTool: params.sourceTool,
       },
       settings: queueSettings,
       send: sendAnnounce,
@@ -730,7 +709,6 @@ async function maybeQueueSubagentAnnounce(params: {
 async function sendSubagentAnnounceDirectly(params: {
   targetRequesterSessionKey: string;
   triggerMessage: string;
-  completionMessage?: string;
   internalEvents?: AgentInternalEvent[];
   expectsCompletionMessage: boolean;
   bestEffortDeliver?: boolean;
@@ -740,6 +718,9 @@ async function sendSubagentAnnounceDirectly(params: {
   currentRunId?: string;
   completionDirectOrigin?: DeliveryContext;
   directOrigin?: DeliveryContext;
+  sourceSessionKey?: string;
+  sourceChannel?: string;
+  sourceTool?: string;
   requesterIsSubagent: boolean;
   signal?: AbortSignal;
 }): Promise<SubagentAnnounceDeliveryResult> {
@@ -757,28 +738,29 @@ async function sendSubagentAnnounceDirectly(params: {
   );
   try {
     const completionDirectOrigin = normalizeDeliveryContext(params.completionDirectOrigin);
-    const completionChannelRaw =
-      typeof completionDirectOrigin?.channel === "string"
-        ? completionDirectOrigin.channel.trim()
+    const directOrigin = normalizeDeliveryContext(params.directOrigin);
+    const effectiveDirectOrigin =
+      params.expectsCompletionMessage && completionDirectOrigin
+        ? completionDirectOrigin
+        : directOrigin;
+    const directChannelRaw =
+      typeof effectiveDirectOrigin?.channel === "string"
+        ? effectiveDirectOrigin.channel.trim()
         : "";
-    const completionChannel =
-      completionChannelRaw && isDeliverableMessageChannel(completionChannelRaw)
-        ? completionChannelRaw
-        : "";
-    const completionTo =
-      typeof completionDirectOrigin?.to === "string" ? completionDirectOrigin.to.trim() : "";
-    const hasCompletionDirectTarget =
-      !params.requesterIsSubagent && Boolean(completionChannel) && Boolean(completionTo);
+    const directChannel =
+      directChannelRaw && isDeliverableMessageChannel(directChannelRaw) ? directChannelRaw : "";
+    const directTo =
+      typeof effectiveDirectOrigin?.to === "string" ? effectiveDirectOrigin.to.trim() : "";
+    const hasDeliverableDirectTarget =
+      !params.requesterIsSubagent && Boolean(directChannel) && Boolean(directTo);
+    let shouldDeliverExternally =
+      !params.requesterIsSubagent &&
+      (!params.expectsCompletionMessage || hasDeliverableDirectTarget);
 
-    if (
-      params.expectsCompletionMessage &&
-      hasCompletionDirectTarget &&
-      params.completionMessage?.trim()
-    ) {
+    if (params.expectsCompletionMessage && hasDeliverableDirectTarget) {
       const forceBoundSessionDirectDelivery =
         params.spawnMode === "session" &&
         (params.completionRouteMode === "bound" || params.completionRouteMode === "hook");
-      let shouldSendCompletionDirectly = true;
       if (!forceBoundSessionDirectDelivery) {
         let pendingDescendantRuns = 0;
         try {
@@ -799,66 +781,17 @@ async function sendSubagentAnnounceDirectly(params: {
             );
           }
         } catch {
-          // Best-effort only; when unavailable keep historical direct-send behavior.
+          // Best-effort only; default to immediate delivery when registry runtime is unavailable.
         }
-        // Keep non-bound completion announcements coordinated via requester
-        // session routing while sibling or descendant runs are still pending.
         if (pendingDescendantRuns > 0) {
-          shouldSendCompletionDirectly = false;
+          shouldDeliverExternally = false;
         }
-      }
-
-      if (shouldSendCompletionDirectly) {
-        const completionThreadId =
-          completionDirectOrigin?.threadId != null && completionDirectOrigin.threadId !== ""
-            ? String(completionDirectOrigin.threadId)
-            : undefined;
-        if (params.signal?.aborted) {
-          return {
-            delivered: false,
-            path: "none",
-          };
-        }
-        await runAnnounceDeliveryWithRetry({
-          operation: "completion direct send",
-          signal: params.signal,
-          run: async () =>
-            await callGateway({
-              method: "send",
-              params: {
-                channel: completionChannel,
-                to: completionTo,
-                accountId: completionDirectOrigin?.accountId,
-                threadId: completionThreadId,
-                sessionKey: canonicalRequesterSessionKey,
-                message: params.completionMessage,
-                idempotencyKey: params.directIdempotencyKey,
-              },
-              timeoutMs: announceTimeoutMs,
-            }),
-        });
-
-        return {
-          delivered: true,
-          path: "direct",
-        };
       }
     }
 
-    const directOrigin = normalizeDeliveryContext(params.directOrigin);
-    const directChannelRaw =
-      typeof directOrigin?.channel === "string" ? directOrigin.channel.trim() : "";
-    const directChannel =
-      directChannelRaw && isDeliverableMessageChannel(directChannelRaw) ? directChannelRaw : "";
-    const directTo = typeof directOrigin?.to === "string" ? directOrigin.to.trim() : "";
-    const hasDeliverableDirectTarget =
-      !params.requesterIsSubagent && Boolean(directChannel) && Boolean(directTo);
-    const shouldDeliverExternally =
-      !params.requesterIsSubagent &&
-      (!params.expectsCompletionMessage || hasDeliverableDirectTarget);
     const threadId =
-      directOrigin?.threadId != null && directOrigin.threadId !== ""
-        ? String(directOrigin.threadId)
+      effectiveDirectOrigin?.threadId != null && effectiveDirectOrigin.threadId !== ""
+        ? String(effectiveDirectOrigin.threadId)
         : undefined;
     if (params.signal?.aborted) {
       return {
@@ -867,7 +800,9 @@ async function sendSubagentAnnounceDirectly(params: {
       };
     }
     await runAnnounceDeliveryWithRetry({
-      operation: "direct announce agent call",
+      operation: params.expectsCompletionMessage
+        ? "completion direct announce agent call"
+        : "direct announce agent call",
       signal: params.signal,
       run: async () =>
         await callGateway({
@@ -879,9 +814,15 @@ async function sendSubagentAnnounceDirectly(params: {
             bestEffortDeliver: params.bestEffortDeliver,
             internalEvents: params.internalEvents,
             channel: shouldDeliverExternally ? directChannel : undefined,
-            accountId: shouldDeliverExternally ? directOrigin?.accountId : undefined,
+            accountId: shouldDeliverExternally ? effectiveDirectOrigin?.accountId : undefined,
             to: shouldDeliverExternally ? directTo : undefined,
             threadId: shouldDeliverExternally ? threadId : undefined,
+            inputProvenance: {
+              kind: "inter_session",
+              sourceSessionKey: params.sourceSessionKey,
+              sourceChannel: params.sourceChannel ?? INTERNAL_MESSAGE_CHANNEL,
+              sourceTool: params.sourceTool ?? "subagent_announce",
+            },
             idempotencyKey: params.directIdempotencyKey,
           },
           expectFinal: true,
@@ -907,12 +848,14 @@ async function deliverSubagentAnnouncement(params: {
   announceId?: string;
   triggerMessage: string;
   steerMessage: string;
-  completionMessage?: string;
   internalEvents?: AgentInternalEvent[];
   summaryLine?: string;
   requesterOrigin?: DeliveryContext;
   completionDirectOrigin?: DeliveryContext;
   directOrigin?: DeliveryContext;
+  sourceSessionKey?: string;
+  sourceChannel?: string;
+  sourceTool?: string;
   targetRequesterSessionKey: string;
   requesterIsSubagent: boolean;
   expectsCompletionMessage: boolean;
@@ -934,6 +877,9 @@ async function deliverSubagentAnnouncement(params: {
         steerMessage: params.steerMessage,
         summaryLine: params.summaryLine,
         requesterOrigin: params.requesterOrigin,
+        sourceSessionKey: params.sourceSessionKey,
+        sourceChannel: params.sourceChannel,
+        sourceTool: params.sourceTool,
         internalEvents: params.internalEvents,
         signal: params.signal,
       }),
@@ -941,7 +887,6 @@ async function deliverSubagentAnnouncement(params: {
       await sendSubagentAnnounceDirectly({
         targetRequesterSessionKey: params.targetRequesterSessionKey,
         triggerMessage: params.triggerMessage,
-        completionMessage: params.completionMessage,
         internalEvents: params.internalEvents,
         directIdempotencyKey: params.directIdempotencyKey,
         currentRunId: params.currentRunId,
@@ -949,6 +894,9 @@ async function deliverSubagentAnnouncement(params: {
         completionRouteMode: params.completionRouteMode,
         spawnMode: params.spawnMode,
         directOrigin: params.directOrigin,
+        sourceSessionKey: params.sourceSessionKey,
+        sourceChannel: params.sourceChannel,
+        sourceTool: params.sourceTool,
         requesterIsSubagent: params.requesterIsSubagent,
         expectsCompletionMessage: params.expectsCompletionMessage,
         signal: params.signal,
@@ -1263,10 +1211,8 @@ export async function runSubagentAnnounceFlow(params: {
     // Build instructional message for main agent
     const announceType = params.announceType ?? "subagent task";
     const taskLabel = params.label || params.task || "task";
-    const subagentName = resolveAgentIdFromSessionKey(params.childSessionKey);
     const announceSessionId = childSessionId || "unknown";
     const findings = reply || "(no output)";
-    let completionMessage = "";
     let triggerMessage = "";
     let steerMessage = "";
     let internalEvents: AgentInternalEvent[] = [];
@@ -1331,13 +1277,6 @@ export async function runSubagentAnnounceFlow(params: {
       startedAt: params.startedAt,
       endedAt: params.endedAt,
     });
-    completionMessage = buildCompletionDeliveryMessage({
-      findings,
-      subagentName,
-      spawnMode: params.spawnMode,
-      outcome,
-      announceType,
-    });
     internalEvents = [
       {
         type: "task_completion",
@@ -1391,7 +1330,6 @@ export async function runSubagentAnnounceFlow(params: {
       announceId,
       triggerMessage,
       steerMessage,
-      completionMessage,
       internalEvents,
       summaryLine: taskLabel,
       requesterOrigin:
@@ -1400,6 +1338,9 @@ export async function runSubagentAnnounceFlow(params: {
           : targetRequesterOrigin,
       completionDirectOrigin,
       directOrigin,
+      sourceSessionKey: params.childSessionKey,
+      sourceChannel: INTERNAL_MESSAGE_CHANNEL,
+      sourceTool: "subagent_announce",
       targetRequesterSessionKey,
       requesterIsSubagent,
       expectsCompletionMessage: expectsCompletionMessage,
