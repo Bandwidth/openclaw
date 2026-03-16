@@ -1,6 +1,7 @@
 const KEY = "openclaw.control.settings.v1";
 const LEGACY_TOKEN_SESSION_KEY = "openclaw.control.token.v1";
 const TOKEN_SESSION_KEY_PREFIX = "openclaw.control.token.v1:";
+const TOKEN_LOCAL_KEY_PREFIX = "openclaw.control.token.persisted.v1:";
 
 type PersistedUiSettings = Omit<UiSettings, "token"> & { token?: never };
 
@@ -11,6 +12,7 @@ import { parseThemeSelection, type ThemeMode, type ThemeName } from "./theme.ts"
 export type UiSettings = {
   gatewayUrl: string;
   token: string;
+  rememberGatewayAuth: boolean;
   sessionKey: string;
   lastActiveSessionKey: string;
   theme: ThemeName;
@@ -86,6 +88,10 @@ function tokenSessionKeyForGateway(gatewayUrl: string): string {
   return `${TOKEN_SESSION_KEY_PREFIX}${normalizeGatewayTokenScope(gatewayUrl)}`;
 }
 
+function tokenLocalKeyForGateway(gatewayUrl: string): string {
+  return `${TOKEN_LOCAL_KEY_PREFIX}${normalizeGatewayTokenScope(gatewayUrl)}`;
+}
+
 function loadSessionToken(gatewayUrl: string): string {
   try {
     const storage = getSessionStorage();
@@ -119,12 +125,37 @@ function persistSessionToken(gatewayUrl: string, token: string) {
   }
 }
 
+function loadRememberedToken(gatewayUrl: string): string {
+  try {
+    const token = localStorage.getItem(tokenLocalKeyForGateway(gatewayUrl)) ?? "";
+    return token.trim();
+  } catch {
+    return "";
+  }
+}
+
+function persistGatewayToken(gatewayUrl: string, token: string, remember: boolean) {
+  try {
+    const normalized = token.trim();
+    persistSessionToken(gatewayUrl, remember ? "" : normalized);
+    const localKey = tokenLocalKeyForGateway(gatewayUrl);
+    if (remember && normalized) {
+      localStorage.setItem(localKey, normalized);
+    } else {
+      localStorage.removeItem(localKey);
+    }
+  } catch {
+    // best-effort
+  }
+}
+
 export function loadSettings(): UiSettings {
   const { pageUrl: pageDerivedUrl, effectiveUrl: defaultUrl } = deriveDefaultGatewayUrl();
 
   const defaults: UiSettings = {
     gatewayUrl: defaultUrl,
     token: loadSessionToken(defaultUrl),
+    rememberGatewayAuth: false,
     sessionKey: "main",
     lastActiveSessionKey: "main",
     theme: "claw",
@@ -152,10 +183,12 @@ export function loadSettings(): UiSettings {
       (parsed as { theme?: unknown }).theme,
       (parsed as { themeMode?: unknown }).themeMode,
     );
+    const rememberGatewayAuth =
+      typeof parsed.rememberGatewayAuth === "boolean" ? parsed.rememberGatewayAuth : false;
     const settings = {
       gatewayUrl,
-      // Gateway auth is intentionally in-memory only; scrub any legacy persisted token on load.
-      token: loadSessionToken(gatewayUrl),
+      token: rememberGatewayAuth ? loadRememberedToken(gatewayUrl) : loadSessionToken(gatewayUrl),
+      rememberGatewayAuth,
       sessionKey:
         typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()
           ? parsed.sessionKey.trim()
@@ -205,9 +238,10 @@ export function saveSettings(next: UiSettings) {
 }
 
 function persistSettings(next: UiSettings) {
-  persistSessionToken(next.gatewayUrl, next.token);
+  persistGatewayToken(next.gatewayUrl, next.token, next.rememberGatewayAuth);
   const persisted: PersistedUiSettings = {
     gatewayUrl: next.gatewayUrl,
+    rememberGatewayAuth: next.rememberGatewayAuth,
     sessionKey: next.sessionKey,
     lastActiveSessionKey: next.lastActiveSessionKey,
     theme: next.theme,

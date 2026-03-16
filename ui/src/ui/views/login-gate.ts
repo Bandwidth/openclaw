@@ -97,6 +97,17 @@ export function renderLoginGate(state: AppViewState) {
               </button>
             </div>
           </label>
+          <label class="field" style="gap:8px; flex-direction:row; align-items:center;">
+            <input
+              type="checkbox"
+              .checked=${state.settings.rememberGatewayAuth}
+              @change=${(e: Event) => {
+                const checked = (e.target as HTMLInputElement).checked;
+                state.applySettings({ ...state.settings, rememberGatewayAuth: checked });
+              }}
+            />
+            <span>Remember me on this device</span>
+          </label>
           <button
             class="btn primary login-gate__connect"
             @click=${() => state.connect()}

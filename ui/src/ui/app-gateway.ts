@@ -118,6 +118,24 @@ export function resolveControlUiClientVersion(params: {
   }
 }
 
+function isCronSessionKey(value: string | undefined): boolean {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (normalized.startsWith("cron:")) {
+    return true;
+  }
+  if (!normalized.startsWith("agent:")) {
+    return false;
+  }
+  const parts = normalized.split(":").filter(Boolean);
+  if (parts.length < 3) {
+    return false;
+  }
+  return parts.slice(2).join(":").startsWith("cron:");
+}
+
 function normalizeSessionKeyForDefaults(
   value: string | undefined,
   defaults: SessionDefaultsSnapshot,
@@ -128,6 +146,9 @@ function normalizeSessionKeyForDefaults(
     return raw;
   }
   if (!raw) {
+    return mainSessionKey;
+  }
+  if (isCronSessionKey(raw)) {
     return mainSessionKey;
   }
   const mainKey = defaults.mainKey?.trim() || "main";

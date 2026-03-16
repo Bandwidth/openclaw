@@ -9,6 +9,7 @@ type GatewayClientMock = {
   start: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
   options: { clientVersion?: string };
+  emitHello: (hello: Record<string, unknown>) => void;
   emitClose: (info: {
     code: number;
     reason?: string;
@@ -39,6 +40,7 @@ vi.mock("./gateway.ts", () => {
     constructor(
       private opts: {
         clientVersion?: string;
+        onHello?: (hello: Record<string, unknown>) => void;
         onClose?: (info: {
           code: number;
           reason: string;
@@ -52,6 +54,9 @@ vi.mock("./gateway.ts", () => {
         start: this.start,
         stop: this.stop,
         options: { clientVersion: this.opts.clientVersion },
+        emitHello: (hello) => {
+          this.opts.onHello?.(hello as never);
+        },
         emitClose: (info) => {
           this.opts.onClose?.({
             code: info.code,
@@ -156,6 +161,31 @@ describe("connectGateway", () => {
     expect(host.lastError).toBe(
       "event gap detected (expected seq 20, got 24); refresh recommended",
     );
+  });
+
+  it("falls back to the main session when persisted session keys point at cron chats", () => {
+    const host = createHost();
+    host.sessionKey = "agent:main:cron:nightly-brief";
+    host.settings.sessionKey = "agent:main:cron:nightly-brief";
+    host.settings.lastActiveSessionKey = "cron:nightly-brief";
+
+    connectGateway(host);
+    const client = gatewayClientInstances[0];
+    expect(client).toBeDefined();
+
+    client.emitHello({
+      snapshot: {
+        sessionDefaults: {
+          mainSessionKey: "agent:main:main",
+          mainKey: "main",
+          defaultAgentId: "main",
+        },
+      },
+    });
+
+    expect(host.sessionKey).toBe("agent:main:main");
+    expect(host.settings.sessionKey).toBe("agent:main:main");
+    expect(host.settings.lastActiveSessionKey).toBe("agent:main:main");
   });
 
   it("ignores stale client onEvent callbacks after reconnect", () => {

@@ -150,22 +150,23 @@ export async function getReplyFromConfig(
     typeof btwQuestion === "string" &&
     shouldHandleTextCommands({
       cfg,
-      surface: finalized.Surface,
+      surface: finalized.Surface ?? "",
       commandSource: finalized.CommandSource,
     });
   const useBtwSideTurn = allowBtwSideTurn && typeof btwQuestion === "string";
   if (useBtwSideTurn && !commandAuth.isAuthorizedSender) {
     return undefined;
   }
-  if (useBtwSideTurn && btwQuestion.length === 0) {
-    return { text: "⚙️ Usage: /btw <question>" };
-  }
   if (useBtwSideTurn) {
-    finalized.Body = btwQuestion;
-    finalized.BodyForAgent = btwQuestion;
-    finalized.RawBody = btwQuestion;
-    finalized.CommandBody = btwQuestion;
-    finalized.BodyForCommands = btwQuestion;
+    const btwQuestionText = btwQuestion ?? "";
+    if (btwQuestionText.length === 0) {
+      return { text: "⚙️ Usage: /btw <question>" };
+    }
+    finalized.Body = btwQuestionText;
+    finalized.BodyForAgent = btwQuestionText;
+    finalized.RawBody = btwQuestionText;
+    finalized.CommandBody = btwQuestionText;
+    finalized.BodyForCommands = btwQuestionText;
   }
 
   if (!isFastTestEnv) {
