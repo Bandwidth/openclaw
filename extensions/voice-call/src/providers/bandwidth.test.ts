@@ -98,4 +98,118 @@ describe("BandwidthProvider", () => {
 
     expect(result.isUnknown).toBe(true);
   });
+
+  describe("parseWebhookEvent", () => {
+    it("parses call.speech event from ClawComm WebSocket message", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.speech",
+          id: "event-uuid",
+          callId: "call-uuid",
+          transcript: "Hello agent",
+          isFinal: true,
+          confidence: 0.95,
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.speech");
+      if (event?.type === "call.speech") {
+        expect(event.transcript).toBe("Hello agent");
+        expect(event.isFinal).toBe(true);
+        expect(event.confidence).toBe(0.95);
+      }
+    });
+
+    it("parses call.dtmf event", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.dtmf",
+          id: "event-uuid",
+          callId: "call-uuid",
+          digits: "5",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.dtmf");
+      if (event?.type === "call.dtmf") {
+        expect(event.digits).toBe("5");
+      }
+    });
+
+    it("parses call.ended event with reason", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.ended",
+          id: "event-uuid",
+          callId: "call-uuid",
+          reason: "hangup-user",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.ended");
+      if (event?.type === "call.ended") {
+        expect(event.reason).toBe("hangup-user");
+      }
+    });
+
+    it("returns empty events for unknown message type", () => {
+      const provider = new BandwidthProvider(config);
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: JSON.stringify({ type: "unknown.event" }),
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(0);
+    });
+
+    it("returns empty events for malformed JSON", () => {
+      const provider = new BandwidthProvider(config);
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: "not valid json",
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(0);
+    });
+  });
 });

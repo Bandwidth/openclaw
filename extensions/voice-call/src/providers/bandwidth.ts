@@ -1,9 +1,12 @@
 import type {
+  CallState,
+  EndReason,
   GetCallStatusInput,
   GetCallStatusResult,
   HangupCallInput,
   InitiateCallInput,
   InitiateCallResult,
+  NormalizedEvent,
   PlayTtsInput,
   ProviderName,
   ProviderWebhookParseResult,
@@ -13,6 +16,7 @@ import type {
   WebhookParseOptions,
   WebhookVerificationResult,
 } from "../types.js";
+import { TerminalStates } from "../types.js";
 import type { VoiceCallProvider } from "./base.js";
 
 /**
@@ -58,15 +62,93 @@ export class BandwidthProvider implements VoiceCallProvider {
     ctx: WebhookContext,
     _options?: WebhookParseOptions,
   ): ProviderWebhookParseResult {
-    // TODO(T20): Implement full WebSocket event parsing
-    // For now, return empty events — WebSocket management added in T20
     try {
-      JSON.parse(ctx.rawBody);
-      // Event mapping will be implemented in T20 (bandwidth provider WebSocket integration)
+      const message = JSON.parse(ctx.rawBody) as Record<string, unknown>;
+
+      if (message.type === "call.event" && message.data) {
+        const event = message.data as Record<string, unknown>;
+        const normalized = this._normalizeEvent(event);
+        if (normalized) {
+          return { events: [normalized] };
+        }
+      }
+
+      if (typeof message.type === "string" && message.type.startsWith("call.")) {
+        const normalized = this._normalizeEvent(message);
+        if (normalized) {
+          return { events: [normalized] };
+        }
+      }
     } catch {
-      // Ignore parse errors for now
     }
+
     return { events: [] };
+  }
+
+  private _normalizeEvent(event: Record<string, unknown>): NormalizedEvent | null {
+    const type = event.type as string;
+    const callId = (event.callId ?? event.call_id) as string | undefined;
+    const id = (event.id as string) ?? globalThis.crypto.randomUUID();
+    const timestamp = (event.timestamp as number) ?? Date.now();
+    const providerCallId = event.providerCallId as string | undefined;
+
+    if (!callId) {
+      return null;
+    }
+
+    const base = { id, callId, providerCallId, timestamp };
+
+    switch (type) {
+      case "call.initiated":
+        return { ...base, type: "call.initiated" };
+      case "call.ringing":
+        return { ...base, type: "call.ringing" };
+      case "call.answered":
+        return { ...base, type: "call.answered" };
+      case "call.active":
+        return { ...base, type: "call.active" };
+      case "call.speaking":
+        return {
+          ...base,
+          type: "call.speaking",
+          text: (event.text as string) ?? "",
+        };
+      case "call.speech":
+        return {
+          ...base,
+          type: "call.speech",
+          transcript: (event.transcript as string) ?? "",
+          isFinal: (event.isFinal as boolean) ?? true,
+          confidence: (event.confidence as number) ?? 1,
+        };
+      case "call.silence":
+        return {
+          ...base,
+          type: "call.silence",
+          durationMs: (event.durationMs as number) ?? 0,
+        };
+      case "call.dtmf":
+        return {
+          ...base,
+          type: "call.dtmf",
+          digits: (event.digits as string) ?? "",
+        };
+      case "call.ended":
+        return {
+          ...base,
+          type: "call.ended",
+          reason: (event.reason as EndReason) ?? "completed",
+        };
+      case "call.error":
+        return {
+          ...base,
+          type: "call.error",
+          error: (event.error as string) ?? "Unknown error",
+          retryable: (event.retryable as boolean) ?? false,
+        };
+      default:
+        return null;
+    }
   }
 
   /**
@@ -183,21 +265,35 @@ export class BandwidthProvider implements VoiceCallProvider {
       }
 
       if (!response.ok) {
-        // Transient error — return unknown so caller can retry
-        return { status: "unknown", isTerminal: false, isUnknown: true };
+        return { isUnknown: true, status: "unknown", isTerminal: false };
       }
 
       const data = (await response.json()) as {
         status: string;
-        is_terminal: boolean;
+        is_terminal?: boolean;
       };
 
+      const statusMap: Record<string, CallState> = {
+        initiated: "initiated",
+        ringing: "ringing",
+        answered: "answered",
+        active: "active",
+        speaking: "speaking",
+        completed: "completed",
+        ended: "completed",
+        failed: "failed",
+        "no-answer": "no-answer",
+        busy: "busy",
+      };
+
+      const state = statusMap[data.status] ?? "completed";
+      const isTerminal = data.is_terminal ?? TerminalStates.has(state);
+
       return {
-        status: data.status,
-        isTerminal: data.is_terminal,
+        status: state,
+        isTerminal,
       };
     } catch {
-      // Network error — return unknown (transient)
       return { status: "unknown", isTerminal: false, isUnknown: true };
     }
   }
