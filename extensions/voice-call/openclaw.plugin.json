@@ -41,6 +41,14 @@
       "label": "Twilio Auth Token",
       "sensitive": true
     },
+    "bandwidth.apiUrl": {
+      "label": "ClawComm API URL",
+      "placeholder": "https://api.clawcomm.example.com"
+    },
+    "bandwidth.apiToken": {
+      "label": "ClawComm API Token",
+      "sensitive": true
+    },
     "outbound.defaultMode": {
       "label": "Default Call Mode"
     },
@@ -168,7 +176,7 @@
       },
       "provider": {
         "type": "string",
-        "enum": ["telnyx", "twilio", "plivo", "mock"]
+        "enum": ["telnyx", "twilio", "plivo", "bandwidth", "mock"]
       },
       "telnyx": {
         "type": "object",
@@ -205,6 +213,19 @@
             "type": "string"
           },
           "authToken": {
+            "type": "string"
+          }
+        }
+      },
+      "bandwidth": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "apiUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "apiToken": {
             "type": "string"
           }
         }

@@ -3,6 +3,7 @@ import { resolveVoiceCallConfig, validateProviderConfig } from "./config.js";
 import type { CoreAgentDeps, CoreConfig } from "./core-bridge.js";
 import { CallManager } from "./manager.js";
 import type { VoiceCallProvider } from "./providers/base.js";
+import { BandwidthProvider } from "./providers/bandwidth.js";
 import { MockProvider } from "./providers/mock.js";
 import { PlivoProvider } from "./providers/plivo.js";
 import { TelnyxProvider } from "./providers/telnyx.js";
@@ -125,6 +126,11 @@ function resolveProvider(config: VoiceCallConfig): VoiceCallProvider {
           webhookSecurity: config.webhookSecurity,
         },
       );
+    case "bandwidth":
+      return new BandwidthProvider({
+        apiUrl: config.bandwidth?.apiUrl ?? "",
+        apiToken: config.bandwidth?.apiToken ?? "",
+      });
     case "mock":
       return new MockProvider();
     default:

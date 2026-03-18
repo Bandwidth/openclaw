@@ -64,6 +64,16 @@ export const PlivoConfigSchema = z
   .strict();
 export type PlivoConfig = z.infer<typeof PlivoConfigSchema>;
 
+export const BandwidthConfigSchema = z
+  .object({
+    /** ClawComm API base URL (e.g. https://api.clawcomm.example.com) */
+    apiUrl: z.string().url().optional(),
+    /** ClawComm API token (from onboarding) */
+    apiToken: z.string().min(1).optional(),
+  })
+  .strict();
+export type BandwidthConfig = z.infer<typeof BandwidthConfigSchema>;
+
 // -----------------------------------------------------------------------------
 // STT/TTS Configuration
 // -----------------------------------------------------------------------------
@@ -251,8 +261,8 @@ export const VoiceCallConfigSchema = z
     /** Enable voice call functionality */
     enabled: z.boolean().default(false),
 
-    /** Active provider (telnyx, twilio, plivo, or mock) */
-    provider: z.enum(["telnyx", "twilio", "plivo", "mock"]).optional(),
+    /** Active provider (telnyx, twilio, plivo, bandwidth, or mock) */
+    provider: z.enum(["telnyx", "twilio", "plivo", "bandwidth", "mock"]).optional(),
 
     /** Telnyx-specific configuration */
     telnyx: TelnyxConfigSchema.optional(),
@@ -262,6 +272,9 @@ export const VoiceCallConfigSchema = z
 
     /** Plivo-specific configuration */
     plivo: PlivoConfigSchema.optional(),
+
+    /** Bandwidth/ClawComm-specific configuration */
+    bandwidth: BandwidthConfigSchema.optional(),
 
     /** Phone number to call from (E.164) */
     fromNumber: E164Schema.optional(),
@@ -425,6 +438,13 @@ export function resolveVoiceCallConfig(config: VoiceCallConfigInput): VoiceCallC
     resolved.plivo = resolved.plivo ?? {};
     resolved.plivo.authId = resolved.plivo.authId ?? process.env.PLIVO_AUTH_ID;
     resolved.plivo.authToken = resolved.plivo.authToken ?? process.env.PLIVO_AUTH_TOKEN;
+  }
+
+  // Bandwidth/ClawComm
+  if (resolved.provider === "bandwidth") {
+    resolved.bandwidth = resolved.bandwidth ?? {};
+    resolved.bandwidth.apiUrl = resolved.bandwidth.apiUrl ?? process.env.CLAWCOMM_API_URL;
+    resolved.bandwidth.apiToken = resolved.bandwidth.apiToken ?? process.env.CLAWCOMM_API_TOKEN;
   }
 
   // Tunnel Config
