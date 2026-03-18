@@ -42,10 +42,11 @@ describe("BandwidthProvider", () => {
     const provider = new BandwidthProvider(config);
     const mockResponse = { call_id: "clawcomm-call-123", status: "initiated" };
 
-    global.fetch = vi.fn().mockResolvedValueOnce({
+    const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => mockResponse,
     } as Response);
+    global.fetch = mockFetch;
 
     const result = await provider.initiateCall({
       callId: "internal-uuid",
@@ -58,7 +59,7 @@ describe("BandwidthProvider", () => {
     expect(result.status).toBe("initiated");
 
     // Verify fetch was called with correct args
-    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+    expect(mockFetch).toHaveBeenCalledWith(
       "https://api.clawcomm.test/api/v1/calls/initiate",
       expect.objectContaining({
         method: "POST",
