@@ -36,10 +36,120 @@ export class BandwidthProvider implements VoiceCallProvider {
 
   private readonly apiUrl: string;
   private readonly apiToken: string;
+  private _ws: WebSocket | null = null;
+  private _reconnectTimer: number | null = null;
+  private _reconnectDelay = 1000;
+  private readonly _maxReconnectDelay = 60000;
+  private _shouldConnect = false;
+  private _eventCallback: ((events: NormalizedEvent[]) => void) | null = null;
 
   constructor(config: { apiUrl: string; apiToken: string }) {
     this.apiUrl = config.apiUrl.replace(/\/$/, ""); // Remove trailing slash
     this.apiToken = config.apiToken;
+  }
+
+  setEventCallback(callback: (events: NormalizedEvent[]) => void): void {
+    this._eventCallback = callback;
+  }
+
+  async connect(eventCallback: (events: NormalizedEvent[]) => void): Promise<void> {
+    this._shouldConnect = true;
+    this.setEventCallback(eventCallback);
+    this._startConnection();
+  }
+
+  disconnect(): void {
+    this._shouldConnect = false;
+
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
+    if (this._ws) {
+      this._ws.close();
+      this._ws = null;
+    }
+
+    console.log("[ClawComm] WebSocket disconnected");
+  }
+
+  private _startConnection(): void {
+    if (!this._shouldConnect) {
+      return;
+    }
+
+    if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    const wsUrl =
+      this.apiUrl.replace(/^https?:\/\//, (match) =>
+        match.startsWith("https") ? "wss://" : "ws://",
+      ) + `/ws?token=${encodeURIComponent(this.apiToken)}`;
+
+    try {
+      this._ws = new WebSocket(wsUrl);
+
+      this._ws.onopen = () => {
+        this._reconnectDelay = 1000;
+        if (this._reconnectTimer) {
+          clearTimeout(this._reconnectTimer);
+          this._reconnectTimer = null;
+        }
+        console.log("[ClawComm] WebSocket connected");
+      };
+
+      this._ws.onmessage = (event) => {
+        if (typeof event.data !== "string") {
+          return;
+        }
+
+        const result = this.parseWebhookEvent({
+          headers: {},
+          rawBody: event.data,
+          url: "/ws",
+          method: "POST",
+        });
+
+        if (result.events.length > 0 && this._eventCallback) {
+          this._eventCallback(result.events);
+        }
+      };
+
+      this._ws.onerror = (err) => {
+        console.warn("[ClawComm] WebSocket error:", err);
+      };
+
+      this._ws.onclose = () => {
+        this._ws = null;
+        if (this._shouldConnect) {
+          this._scheduleReconnect();
+        }
+      };
+    } catch (err) {
+      console.warn("[ClawComm] Failed to create WebSocket:", err);
+      this._scheduleReconnect();
+    }
+  }
+
+  private _scheduleReconnect(): void {
+    if (!this._shouldConnect) {
+      return;
+    }
+
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+
+    const delay = this._reconnectDelay;
+    this._reconnectDelay = Math.min(this._reconnectDelay * 2, this._maxReconnectDelay);
+    console.log(`[ClawComm] Reconnecting in ${delay}ms...`);
+
+    this._reconnectTimer = globalThis.setTimeout(() => {
+      this._startConnection();
+    }, delay);
   }
 
   /**

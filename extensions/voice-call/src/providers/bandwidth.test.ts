@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BandwidthProvider } from "./bandwidth.js";
 
 describe("BandwidthProvider", () => {
@@ -210,6 +210,61 @@ describe("BandwidthProvider", () => {
       });
 
       expect(result.events).toHaveLength(0);
+    });
+  });
+
+  describe("BandwidthProvider WebSocket", () => {
+    class FakeWebSocket {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+
+      readyState = FakeWebSocket.CONNECTING;
+      onopen: (() => void) | null = null;
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      onerror: ((err: unknown) => void) | null = null;
+      onclose: (() => void) | null = null;
+
+      constructor(public readonly url: string) {}
+
+      close(): void {
+        this.readyState = FakeWebSocket.CLOSED;
+        this.onclose?.();
+      }
+    }
+
+    const originalWebSocket = globalThis.WebSocket;
+
+    beforeEach(() => {
+      (globalThis as { WebSocket: typeof globalThis.WebSocket }).WebSocket =
+        FakeWebSocket as unknown as typeof globalThis.WebSocket;
+    });
+
+    afterEach(() => {
+      (globalThis as { WebSocket: unknown }).WebSocket = originalWebSocket;
+      vi.restoreAllMocks();
+    });
+
+    it("connect() initializes websocket state and callback", async () => {
+      const provider = new BandwidthProvider(config);
+      const mockCallback = vi.fn();
+
+      await provider.connect(mockCallback);
+
+      expect(typeof provider.connect).toBe("function");
+      expect(typeof provider.disconnect).toBe("function");
+      expect((provider as unknown as { _shouldConnect: boolean })._shouldConnect).toBe(true);
+      expect((provider as unknown as { _eventCallback: unknown })._eventCallback).toBe(mockCallback);
+
+      const ws = (provider as unknown as { _ws: FakeWebSocket | null })._ws;
+      expect(ws).not.toBeNull();
+      expect(ws?.url).toBe("wss://api.clawcomm.test/ws?token=test-token-123");
+    });
+
+    it("disconnect() cleans up without error when not connected", () => {
+      const provider = new BandwidthProvider(config);
+      expect(() => provider.disconnect()).not.toThrow();
     });
   });
 });

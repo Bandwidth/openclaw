@@ -3,7 +3,7 @@
   "uiHints": {
     "provider": {
       "label": "Provider",
-      "help": "Use twilio, telnyx, or mock for dev/no-network."
+      "help": "Use bandwidth (ClawComm), plivo, telnyx, twilio, or mock for dev/no-network."
     },
     "fromNumber": {
       "label": "From Number",

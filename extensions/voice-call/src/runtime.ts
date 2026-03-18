@@ -34,6 +34,7 @@ type Logger = {
 function createRuntimeResourceLifecycle(params: {
   config: VoiceCallConfig;
   webhookServer: VoiceCallWebhookServer;
+  provider: VoiceCallProvider;
 }): {
   setTunnelResult: (result: TunnelResult | null) => void;
   stop: (opts?: { suppressErrors?: boolean }) => Promise<void>;
@@ -66,6 +67,11 @@ function createRuntimeResourceLifecycle(params: {
       }, suppressErrors);
       await runStep(async () => {
         await cleanupTailscaleExposure(params.config);
+      }, suppressErrors);
+      await runStep(async () => {
+        if (params.provider.name === "bandwidth") {
+          (params.provider as BandwidthProvider).disconnect();
+        }
       }, suppressErrors);
       await runStep(async () => {
         await params.webhookServer.stop();
@@ -179,7 +185,7 @@ export async function createVoiceCallRuntime(params: {
     coreConfig,
     agentRuntime,
   );
-  const lifecycle = createRuntimeResourceLifecycle({ config, webhookServer });
+  const lifecycle = createRuntimeResourceLifecycle({ config, webhookServer, provider });
 
   const localUrl = await webhookServer.start();
 
@@ -249,6 +255,22 @@ export async function createVoiceCallRuntime(params: {
     }
 
     await manager.initialize(provider, webhookUrl);
+
+    if (provider.name === "bandwidth") {
+      await (provider as BandwidthProvider).connect((events) => {
+        for (const event of events) {
+          try {
+            manager.processEvent(event);
+          } catch (err) {
+            log.warn(
+              `[voice-call] Error processing bandwidth websocket event ${event.type}: ${
+                err instanceof Error ? err.message : String(err)
+              }`,
+            );
+          }
+        }
+      });
+    }
 
     const stop = async () => await lifecycle.stop();
 
