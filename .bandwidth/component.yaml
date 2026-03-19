@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  schemaVersion: v1.0.0
+  name: openclaw
+  description: Forked from https://github.com/openclaw/openclaw
+  annotations:
+    github.com/project-slug: Bandwidth/openclaw
+  organization: BW
+  costCenter: Development - Software Infra
+  platformType: N/A
+  buildPlatform: GitHub Actions
+spec:
+  type: Service
+  owner: github/band-swi
+  lifecycle: Prototype
+  dependsOn:
+    - resource:platform/GitHub Actions
+    - resource:cost-center/Development - Software Infra
