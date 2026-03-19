@@ -4,6 +4,7 @@ Official Voice Call plugin for **OpenClaw**.
 
 Providers:
 
+- **Bandwidth / ClawComm** (WebSocket — no public webhook URL needed)
 - **Twilio** (Programmable Voice + Media Streams)
 - **Telnyx** (Call Control v2)
 - **Plivo** (Voice API + XML transfer + GetInput speech)
@@ -36,7 +37,7 @@ Put under `plugins.entries.voice-call.config`:
 
 ```json5
 {
-  provider: "twilio", // or "telnyx" | "plivo" | "mock"
+  provider: "twilio", // or "telnyx" | "plivo" | "mock" | "bandwidth"
   fromNumber: "+15550001234",
   toNumber: "+15550005678",
 
@@ -56,6 +57,13 @@ Put under `plugins.entries.voice-call.config`:
   plivo: {
     authId: "MAxxxxxxxxxxxxxxxxxxxx",
     authToken: "your_token",
+  },
+
+  // Bandwidth / ClawComm (no webhook URL needed — uses WebSocket)
+  // Set CLAWCOMM_API_TOKEN env var instead of putting token in config.
+  bandwidth: {
+    apiUrl: "https://labs.bandwidth.com/api/clawcomm",
+    apiToken: "your-token-from-onboarding",
   },
 
   // Webhook server
@@ -86,6 +94,7 @@ Put under `plugins.entries.voice-call.config`:
 
 Notes:
 
+- Bandwidth/ClawComm uses WebSocket (no public webhook URL required).
 - Twilio/Telnyx/Plivo require a **publicly reachable** webhook URL.
 - `mock` is a local dev provider (no network calls).
 - Telnyx requires `telnyx.publicKey` (or `TELNYX_PUBLIC_KEY`) unless `skipSignatureVerification` is true.

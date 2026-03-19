@@ -536,5 +536,18 @@ export function validateProviderConfig(config: VoiceCallConfig): {
     }
   }
 
+  if (config.provider === "bandwidth") {
+    if (!config.bandwidth?.apiUrl) {
+      errors.push(
+        "plugins.entries.voice-call.config.bandwidth.apiUrl is required (or set CLAWCOMM_API_URL env)",
+      );
+    }
+    if (!config.bandwidth?.apiToken) {
+      errors.push(
+        "plugins.entries.voice-call.config.bandwidth.apiToken is required (or set CLAWCOMM_API_TOKEN env)",
+      );
+    }
+  }
+
   return { valid: errors.length === 0, errors };
 }

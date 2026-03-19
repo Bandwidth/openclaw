@@ -7,7 +7,9 @@ import {
 } from "./config.js";
 import { createVoiceCallBaseConfig } from "./test-fixtures.js";
 
-function createBaseConfig(provider: "telnyx" | "twilio" | "plivo" | "mock"): VoiceCallConfig {
+function createBaseConfig(
+  provider: "telnyx" | "twilio" | "plivo" | "mock" | "bandwidth",
+): VoiceCallConfig {
   return createVoiceCallBaseConfig({ provider });
 }
 
@@ -21,6 +23,8 @@ describe("validateProviderConfig", () => {
     delete process.env.TELNYX_PUBLIC_KEY;
     delete process.env.PLIVO_AUTH_ID;
     delete process.env.PLIVO_AUTH_TOKEN;
+    delete process.env.CLAWCOMM_API_URL;
+    delete process.env.CLAWCOMM_API_TOKEN;
   };
 
   beforeEach(() => {
@@ -156,6 +160,40 @@ describe("validateProviderConfig", () => {
       expect(result.errors).toContain(
         "plugins.entries.voice-call.config.plivo.authId is required (or set PLIVO_AUTH_ID env)",
       );
+    });
+  });
+
+  describe("bandwidth provider", () => {
+    it("fails validation when bandwidth credentials are missing", () => {
+      const config = resolveVoiceCallConfig(createBaseConfig("bandwidth"));
+      const result = validateProviderConfig(config);
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain(
+        "plugins.entries.voice-call.config.bandwidth.apiUrl is required (or set CLAWCOMM_API_URL env)",
+      );
+      expect(result.errors).toContain(
+        "plugins.entries.voice-call.config.bandwidth.apiToken is required (or set CLAWCOMM_API_TOKEN env)",
+      );
+    });
+
+    it("passes validation with credentials from config", () => {
+      const config = createBaseConfig("bandwidth");
+      config.bandwidth = {
+        apiUrl: "https://labs.bandwidth.com/api/clawcomm",
+        apiToken: "test-token",
+      };
+      const result = validateProviderConfig(resolveVoiceCallConfig(config));
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
+    });
+
+    it("passes validation with credentials from env vars", () => {
+      process.env.CLAWCOMM_API_URL = "https://labs.bandwidth.com/api/clawcomm";
+      process.env.CLAWCOMM_API_TOKEN = "test-token";
+      const config = resolveVoiceCallConfig(createBaseConfig("bandwidth"));
+      const result = validateProviderConfig(config);
+      expect(result.valid).toBe(true);
+      expect(result.errors).toEqual([]);
     });
   });
 

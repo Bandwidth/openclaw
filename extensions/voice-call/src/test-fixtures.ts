@@ -1,7 +1,7 @@
 import type { VoiceCallConfig } from "./config.js";
 
 export function createVoiceCallBaseConfig(params?: {
-  provider?: "telnyx" | "twilio" | "plivo" | "mock";
+  provider?: "telnyx" | "twilio" | "plivo" | "mock" | "bandwidth";
   tunnelProvider?: "none" | "ngrok";
 }): VoiceCallConfig {
   return {
