@@ -354,6 +354,36 @@ export function registerVoiceCallCli(params: {
         process.exit(1);
       }
 
+      const existingToken = process.env.CLAWCOMM_API_TOKEN;
+      if (existingToken) {
+        try {
+          const meResponse = await fetch(`${apiUrl}/api/v1/accounts/me`, {
+            headers: { Authorization: `Bearer ${existingToken}` },
+          });
+          if (meResponse.ok) {
+            const account = (await meResponse.json()) as { assigned_number?: string };
+            // eslint-disable-next-line no-console
+            console.log(
+              `\nAlready configured. My phone number is ${account.assigned_number ?? "unknown"}.`,
+            );
+            const rlCheck = createInterface({ input: process.stdin, output: process.stdout });
+            let reconfigure: string;
+            try {
+              reconfigure = (
+                await rlCheck.question("Reconfigure? This will register a new account. [y/N]: ")
+              ).trim();
+            } finally {
+              rlCheck.close();
+            }
+            if (reconfigure.toLowerCase() !== "y") {
+              // eslint-disable-next-line no-console
+              console.log("Keeping existing configuration.");
+              return;
+            }
+          }
+        } catch {}
+      }
+
       // 2FA consent disclaimer (legally required)
       // eslint-disable-next-line no-console
       console.log(`\n${TFA_DISCLAIMER}\n`);
