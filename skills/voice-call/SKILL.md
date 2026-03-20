@@ -74,9 +74,7 @@ The gateway auto-restarts when plugin config changes (no manual restart needed).
 
 3. **Display 2FA consent disclaimer** (MANDATORY — display this exact text before asking for any phone number):
 
-   > By providing your number, you consent to receive 2FA messages from Bandwidth.
-   > Message Frequency may vary. Message and Data rates may apply.
-   > Text Stop to opt-out or Help for support.
+   "By providing your number, you consent to receive 2FA messages from Bandwidth. Message Frequency may vary. Message and Data rates may apply. Text Stop to opt-out or Help for support."
 
 4. **Collect mobile number** — Ask the user for their mobile number in E.164 format (e.g. `+15551234567`).
    This is used for two-factor verification only.
