@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -443,10 +443,9 @@ export function registerVoiceCallCli(params: {
       });
       for (const [key, value] of commands) {
         try {
-          execSync(
-            `${process.argv[0]} ${process.argv[1]} config set ${key} ${JSON.stringify(value)}`,
-            { stdio: "pipe" },
-          );
+          execFileSync(process.argv[0], [process.argv[1], "config", "set", key, value], {
+            stdio: "pipe",
+          });
         } catch (err) {
           logger.error(
             `[voice-call] Failed to set config ${key}: ${err instanceof Error ? err.message : String(err)}`,
