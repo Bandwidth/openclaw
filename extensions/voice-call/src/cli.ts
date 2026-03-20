@@ -443,9 +443,13 @@ export function registerVoiceCallCli(params: {
       });
       for (const [key, value] of commands) {
         try {
-          execFileSync(process.argv[0], [process.argv[1], "config", "set", key, value], {
-            stdio: "pipe",
-          });
+          execFileSync(
+            process.argv[0],
+            [process.argv[1], "config", "set", key, JSON.stringify(value)],
+            {
+              stdio: "pipe",
+            },
+          );
         } catch (err) {
           logger.error(
             `[voice-call] Failed to set config ${key}: ${err instanceof Error ? err.message : String(err)}`,
