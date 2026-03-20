@@ -1,10 +1,22 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import type { Command } from "commander";
 import { sleep } from "../api.js";
 import type { VoiceCallConfig } from "./config.js";
 import type { VoiceCallRuntime } from "./runtime.js";
+import {
+  buildConfigSetCommands,
+  checkHealth,
+  detectShellProfile,
+  register,
+  resolveApiUrl,
+  TFA_DISCLAIMER,
+  validatePhone,
+  verify,
+} from "./setup.js";
 import { resolveUserPath } from "./utils.js";
 import {
   cleanupTailscaleExposureRoute,
@@ -318,6 +330,120 @@ export function registerVoiceCallCli(params: {
           2,
         ),
       );
+    });
+
+  root
+    .command("setup")
+    .description("Interactively register with ClawComm and configure voice calling")
+    .requiredOption("--provider <provider>", "Voice provider to configure (bandwidth only)")
+    .action(async (options: { provider: string }) => {
+      if (options.provider !== "bandwidth") {
+        logger.error(
+          `[voice-call] Unsupported provider: ${options.provider}. Only 'bandwidth' is supported.`,
+        );
+        process.exit(1);
+      }
+
+      const apiUrl = resolveApiUrl();
+
+      const health = await checkHealth(apiUrl);
+      if (!health.ok) {
+        logger.error(
+          `[voice-call] ClawComm API is not reachable: ${health.error ?? "unknown error"}`,
+        );
+        process.exit(1);
+      }
+
+      // 2FA consent disclaimer (legally required)
+      // eslint-disable-next-line no-console
+      console.log(`\n${TFA_DISCLAIMER}\n`);
+
+      let token: string;
+      let assignedNumber: string;
+      let phone: string | null = null;
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+
+      try {
+        while (!phone) {
+          const raw = await rl.question("Your mobile number (E.164 format, e.g. +15551234567): ");
+          phone = validatePhone(raw.trim());
+          if (!phone) {
+            // eslint-disable-next-line no-console
+            console.log("Invalid phone number. Please use E.164 format (e.g. +15551234567).");
+          }
+        }
+
+        let sessionId: string;
+        try {
+          const result = await register(apiUrl, phone);
+          sessionId = result.session_id;
+          // eslint-disable-next-line no-console
+          console.log("Verification code sent to your phone.");
+        } catch (error) {
+          logger.error(
+            `[voice-call] Registration failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          process.exit(1);
+          return;
+        }
+
+        const code = (await rl.question("Enter the 6-digit verification code: ")).trim();
+
+        try {
+          const result = await verify(apiUrl, sessionId, code);
+          token = result.token;
+          assignedNumber = result.assigned_number;
+        } catch (error) {
+          logger.error(
+            `[voice-call] Verification failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          process.exit(1);
+          return;
+        }
+      } finally {
+        rl.close();
+      }
+
+      // Write config via sequential `openclaw config set` calls
+      const commands = buildConfigSetCommands({
+        apiUrl,
+        apiToken: token!,
+        fromNumber: assignedNumber!,
+        toNumber: phone!,
+      });
+      for (const [key, value] of commands) {
+        try {
+          execSync(`openclaw config set ${key} ${JSON.stringify(value)}`, { stdio: "pipe" });
+        } catch (err) {
+          logger.error(
+            `[voice-call] Failed to set config ${key}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          process.exit(1);
+        }
+      }
+
+      const profile = detectShellProfile();
+      if (profile) {
+        const profilePath = path.join(os.homedir(), profile.replace("~/", ""));
+        if (fs.existsSync(profilePath)) {
+          const exportLine = `\nexport CLAWCOMM_API_TOKEN="${token!}"\n`;
+          fs.appendFileSync(profilePath, exportLine, "utf8");
+          // eslint-disable-next-line no-console
+          console.log(`Added CLAWCOMM_API_TOKEN to ${profile}`);
+        }
+      } else if (process.platform === "win32") {
+        // eslint-disable-next-line no-console
+        console.log(
+          "Windows shell profile not supported. Set CLAWCOMM_API_TOKEN manually in your environment.",
+        );
+      }
+
+      // eslint-disable-next-line no-console
+      console.log(
+        `\nMy phone number is ${assignedNumber!}. You can reach me there anytime, or just tell me to call you.`,
+      );
+      // eslint-disable-next-line no-console
+      console.log("Gateway will pick up the new config automatically.");
     });
 
   root
