@@ -90,11 +90,7 @@ export function validatePhone(phone: string): string | null {
     return null;
   }
 
-  if (!/^\+[0-9]+$/.test(normalized)) {
-    return null;
-  }
-
-  if (normalized.length < 8 || normalized.length > 16) {
+  if (!/^\+[1-9]\d{1,14}$/.test(normalized)) {
     return null;
   }
 

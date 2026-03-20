@@ -157,8 +157,20 @@ describe("setup helpers", () => {
       expect(validatePhone("15551234567")).toBe("+15551234567");
     });
 
-    it("returns null for too short number", () => {
-      expect(validatePhone("555")).toBeNull();
+    it("auto-prepends + and accepts short valid numbers", () => {
+      expect(validatePhone("555")).toBe("+555");
+    });
+
+    it("rejects leading zero after +", () => {
+      expect(validatePhone("+05551234567")).toBeNull();
+    });
+
+    it("rejects too-short number (2 chars)", () => {
+      expect(validatePhone("+1")).toBeNull();
+    });
+
+    it("accepts minimum valid (3 chars)", () => {
+      expect(validatePhone("+12")).toBe("+12");
     });
 
     it("returns null for non-numeric input", () => {
