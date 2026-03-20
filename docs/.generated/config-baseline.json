@@ -54710,6 +54710,43 @@
       "hasChildren": false
     },
     {
+      "path": "plugins.entries.voice-call.config.bandwidth",
+      "kind": "plugin",
+      "type": "object",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [],
+      "hasChildren": true
+    },
+    {
+      "path": "plugins.entries.voice-call.config.bandwidth.apiToken",
+      "kind": "plugin",
+      "type": "string",
+      "required": false,
+      "deprecated": false,
+      "sensitive": true,
+      "tags": [
+        "auth",
+        "security"
+      ],
+      "label": "ClawComm API Token",
+      "hasChildren": false
+    },
+    {
+      "path": "plugins.entries.voice-call.config.bandwidth.apiUrl",
+      "kind": "plugin",
+      "type": "string",
+      "required": false,
+      "deprecated": false,
+      "sensitive": false,
+      "tags": [
+        "advanced"
+      ],
+      "label": "ClawComm API URL",
+      "hasChildren": false
+    },
+    {
       "path": "plugins.entries.voice-call.config.enabled",
       "kind": "plugin",
       "type": "boolean",
@@ -54863,6 +54900,7 @@
         "telnyx",
         "twilio",
         "plivo",
+        "bandwidth",
         "mock"
       ],
       "deprecated": false,
@@ -54871,7 +54909,7 @@
         "advanced"
       ],
       "label": "Provider",
-      "help": "Use twilio, telnyx, or mock for dev/no-network.",
+      "help": "Use bandwidth (ClawComm), plivo, telnyx, twilio, or mock for dev/no-network.",
       "hasChildren": false
     },
     {
