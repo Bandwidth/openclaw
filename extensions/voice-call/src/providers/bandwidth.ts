@@ -216,7 +216,13 @@ export class BandwidthProvider implements VoiceCallProvider {
       return null;
     }
 
-    const base = { id, callId, providerCallId, timestamp };
+    const base = {
+      id,
+      callId,
+      providerCallId,
+      timestamp,
+      dedupeKey: `${callId}:${type}:${timestamp}`,
+    };
 
     switch (type) {
       case "call.initiated":

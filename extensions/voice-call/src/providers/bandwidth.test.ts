@@ -499,6 +499,37 @@ describe("BandwidthProvider", () => {
         expect(event.retryable).toBe(false);
       }
     });
+
+    it("generates consistent dedupeKey for same event data", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.speech",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+          transcript: "hello",
+          isFinal: true,
+          confidence: 0.9,
+        },
+      });
+      const result1 = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+      const result2 = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+      expect(result1.events[0]?.dedupeKey).toBeDefined();
+      expect(result1.events[0]?.dedupeKey).toBe(result2.events[0]?.dedupeKey);
+    });
   });
 
   describe("BandwidthProvider WebSocket", () => {
