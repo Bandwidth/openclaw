@@ -37,13 +37,20 @@ export class BandwidthProvider implements VoiceCallProvider {
   private readonly apiUrl: string;
   private readonly apiToken: string;
   private _ws: WebSocket | null = null;
-  private _reconnectTimer: number | null = null;
+  private _reconnectTimer: NodeJS.Timeout | null = null;
   private _reconnectDelay = 1000;
   private readonly _maxReconnectDelay = 60000;
   private _shouldConnect = false;
   private _eventCallback: ((events: NormalizedEvent[]) => void) | null = null;
 
   constructor(config: { apiUrl: string; apiToken: string }) {
+    if (!config.apiUrl) {
+      throw new Error("BandwidthProvider requires apiUrl");
+    }
+    if (!config.apiToken) {
+      throw new Error("BandwidthProvider requires apiToken");
+    }
+
     this.apiUrl = config.apiUrl.replace(/\/$/, ""); // Remove trailing slash
     this.apiToken = config.apiToken;
   }
@@ -79,7 +86,10 @@ export class BandwidthProvider implements VoiceCallProvider {
       return;
     }
 
-    if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) {
+    if (
+      this._ws &&
+      (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -189,8 +199,7 @@ export class BandwidthProvider implements VoiceCallProvider {
           return { events: [normalized] };
         }
       }
-    } catch {
-    }
+    } catch {}
 
     return { events: [] };
   }
@@ -296,13 +305,10 @@ export class BandwidthProvider implements VoiceCallProvider {
    * Hang up an active call via ClawComm API.
    */
   async hangupCall(input: HangupCallInput): Promise<void> {
-    const response = await fetch(
-      `${this.apiUrl}/api/v1/calls/${input.providerCallId}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${this.apiToken}` },
-      },
-    );
+    const response = await fetch(`${this.apiUrl}/api/v1/calls/${input.providerCallId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${this.apiToken}` },
+    });
 
     if (!response.ok && response.status !== 404) {
       // 404 means call already ended — that's OK
@@ -317,17 +323,14 @@ export class BandwidthProvider implements VoiceCallProvider {
    * Jambonz handles the actual TTS synthesis and audio playback.
    */
   async playTts(input: PlayTtsInput): Promise<void> {
-    const response = await fetch(
-      `${this.apiUrl}/api/v1/calls/${input.providerCallId}/speak`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiToken}`,
-        },
-        body: JSON.stringify({ text: input.text }),
+    const response = await fetch(`${this.apiUrl}/api/v1/calls/${input.providerCallId}/speak`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiToken}`,
       },
-    );
+      body: JSON.stringify({ text: input.text }),
+    });
 
     if (!response.ok) {
       const error = await response.text();
@@ -363,12 +366,9 @@ export class BandwidthProvider implements VoiceCallProvider {
    */
   async getCallStatus(input: GetCallStatusInput): Promise<GetCallStatusResult> {
     try {
-      const response = await fetch(
-        `${this.apiUrl}/api/v1/calls/${input.providerCallId}`,
-        {
-          headers: { Authorization: `Bearer ${this.apiToken}` },
-        },
-      );
+      const response = await fetch(`${this.apiUrl}/api/v1/calls/${input.providerCallId}`, {
+        headers: { Authorization: `Bearer ${this.apiToken}` },
+      });
 
       if (response.status === 404) {
         return { status: "completed", isTerminal: true };

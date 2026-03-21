@@ -12,6 +12,19 @@ describe("BandwidthProvider", () => {
     expect(provider.name).toBe("bandwidth");
   });
 
+  describe("constructor", () => {
+    it("throws when apiUrl is empty", () => {
+      expect(() => new BandwidthProvider({ ...config, apiUrl: "" })).toThrow(
+        "BandwidthProvider requires apiUrl",
+      );
+    });
+    it("throws when apiToken is empty", () => {
+      expect(() => new BandwidthProvider({ ...config, apiToken: "" })).toThrow(
+        "BandwidthProvider requires apiToken",
+      );
+    });
+  });
+
   it("verifyWebhook always returns ok (pre-auth via WebSocket)", () => {
     const provider = new BandwidthProvider(config);
     const result = provider.verifyWebhook({
