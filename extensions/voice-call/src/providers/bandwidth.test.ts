@@ -27,14 +27,14 @@ describe("BandwidthProvider", () => {
     const provider = new BandwidthProvider(config);
     // Should not throw — signaling-only, Jambonz gather handles STT
     await expect(
-      provider.startListening({ callId: "test", providerCallId: "jambonz-sid" })
+      provider.startListening({ callId: "test", providerCallId: "jambonz-sid" }),
     ).resolves.toBeUndefined();
   });
 
   it("stopListening is a no-op in Phase 1", async () => {
     const provider = new BandwidthProvider(config);
     await expect(
-      provider.stopListening({ callId: "test", providerCallId: "jambonz-sid" })
+      provider.stopListening({ callId: "test", providerCallId: "jambonz-sid" }),
     ).resolves.toBeUndefined();
   });
 
@@ -66,7 +66,7 @@ describe("BandwidthProvider", () => {
         headers: expect.objectContaining({
           Authorization: "Bearer test-token-123",
         }),
-      })
+      }),
     );
   });
 
@@ -84,7 +84,7 @@ describe("BandwidthProvider", () => {
         callId: "test",
         providerCallId: "jambonz-sid",
         reason: "hangup-bot",
-      })
+      }),
     ).resolves.toBeUndefined();
   });
 
@@ -211,6 +211,284 @@ describe("BandwidthProvider", () => {
 
       expect(result.events).toHaveLength(0);
     });
+
+    it("normalizes call.initiated events", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.initiated",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.initiated");
+      expect(event?.callId).toBe("call-uuid");
+    });
+
+    it("normalizes call.ringing events", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.ringing",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.ringing");
+      expect(event?.callId).toBe("call-uuid");
+    });
+
+    it("normalizes call.answered events", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.answered",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.answered");
+      expect(event?.callId).toBe("call-uuid");
+    });
+
+    it("normalizes call.active events", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.active",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.active");
+      expect(event?.callId).toBe("call-uuid");
+    });
+
+    it("normalizes call.speaking events with text", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.speaking",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+          text: "hello agent",
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.speaking");
+      if (event?.type === "call.speaking") {
+        expect(event.text).toBe("hello agent");
+      }
+    });
+
+    it("normalizes call.speaking events with default text when omitted", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.speaking",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.speaking");
+      if (event?.type === "call.speaking") {
+        expect(event.text).toBe("");
+      }
+    });
+
+    it("normalizes call.silence events with durationMs", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.silence",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+          durationMs: 500,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.silence");
+      if (event?.type === "call.silence") {
+        expect(event.durationMs).toBe(500);
+      }
+    });
+
+    it("normalizes call.silence events with default durationMs when omitted", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.silence",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.silence");
+      if (event?.type === "call.silence") {
+        expect(event.durationMs).toBe(0);
+      }
+    });
+
+    it("normalizes call.error events with error and retryable", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.error",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+          error: "boom",
+          retryable: true,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.error");
+      if (event?.type === "call.error") {
+        expect(event.error).toBe("boom");
+        expect(event.retryable).toBe(true);
+      }
+    });
+
+    it("normalizes call.error events with defaults when error/retryable omitted", () => {
+      const provider = new BandwidthProvider(config);
+      const wsMessage = JSON.stringify({
+        type: "call.event",
+        data: {
+          type: "call.error",
+          id: "event-uuid",
+          callId: "call-uuid",
+          providerCallId: "provider-uuid",
+          timestamp: 1710000000000,
+        },
+      });
+
+      const result = provider.parseWebhookEvent({
+        headers: {},
+        rawBody: wsMessage,
+        url: "/ws",
+        method: "POST",
+      });
+
+      expect(result.events).toHaveLength(1);
+      const event = result.events[0];
+      expect(event?.type).toBe("call.error");
+      if (event?.type === "call.error") {
+        expect(event.error).toBe("Unknown error");
+        expect(event.retryable).toBe(false);
+      }
+    });
   });
 
   describe("BandwidthProvider WebSocket", () => {
@@ -255,7 +533,9 @@ describe("BandwidthProvider", () => {
       expect(typeof provider.connect).toBe("function");
       expect(typeof provider.disconnect).toBe("function");
       expect((provider as unknown as { _shouldConnect: boolean })._shouldConnect).toBe(true);
-      expect((provider as unknown as { _eventCallback: unknown })._eventCallback).toBe(mockCallback);
+      expect((provider as unknown as { _eventCallback: unknown })._eventCallback).toBe(
+        mockCallback,
+      );
 
       const ws = (provider as unknown as { _ws: FakeWebSocket | null })._ws;
       expect(ws).not.toBeNull();
