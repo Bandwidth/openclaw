@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { BandwidthProvider } from "./bandwidth.js";
+import * as guardedJsonApi from "./shared/guarded-json-api.js";
 
 describe("BandwidthProvider", () => {
   const config = {
@@ -55,11 +56,9 @@ describe("BandwidthProvider", () => {
     const provider = new BandwidthProvider(config);
     const mockResponse = { call_id: "clawcomm-call-123", status: "initiated" };
 
-    const mockFetch = vi.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockResponse,
-    } as Response);
-    global.fetch = mockFetch;
+    const guardedRequestSpy = vi
+      .spyOn(guardedJsonApi, "guardedJsonApiRequest")
+      .mockResolvedValueOnce(mockResponse);
 
     const result = await provider.initiateCall({
       callId: "internal-uuid",
@@ -71,14 +70,14 @@ describe("BandwidthProvider", () => {
     expect(result.providerCallId).toBe("clawcomm-call-123");
     expect(result.status).toBe("initiated");
 
-    // Verify fetch was called with correct args
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://api.clawcomm.test/api/v1/calls/initiate",
+    expect(guardedRequestSpy).toHaveBeenCalledWith(
       expect.objectContaining({
+        url: "https://api.clawcomm.test/api/v1/calls/initiate",
         method: "POST",
         headers: expect.objectContaining({
           Authorization: "Bearer test-token-123",
         }),
+        allowedHostnames: ["api.clawcomm.test"],
       }),
     );
   });
@@ -86,11 +85,7 @@ describe("BandwidthProvider", () => {
   it("hangupCall accepts 404 as success (call already ended)", async () => {
     const provider = new BandwidthProvider(config);
 
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      ok: false,
-      status: 404,
-      text: async () => "Not found",
-    } as unknown as Response);
+    vi.spyOn(guardedJsonApi, "guardedJsonApiRequest").mockResolvedValueOnce(undefined);
 
     await expect(
       provider.hangupCall({
@@ -103,7 +98,9 @@ describe("BandwidthProvider", () => {
 
   it("getCallStatus returns isUnknown on network error (transient)", async () => {
     const provider = new BandwidthProvider(config);
-    global.fetch = vi.fn().mockRejectedValueOnce(new Error("Network error"));
+    vi.spyOn(guardedJsonApi, "guardedJsonApiRequest").mockRejectedValueOnce(
+      new Error("Network error"),
+    );
 
     const result = await provider.getCallStatus({
       providerCallId: "jambonz-sid",

@@ -18,6 +18,7 @@ import type {
 } from "../types.js";
 import { TerminalStates } from "../types.js";
 import type { VoiceCallProvider } from "./base.js";
+import { guardedJsonApiRequest } from "./shared/guarded-json-api.js";
 
 /**
  * ClawComm/Bandwidth provider for OpenClaw voice calls.
@@ -275,26 +276,24 @@ export class BandwidthProvider implements VoiceCallProvider {
    * ClawComm will call Jambonz, which routes through Bandwidth to the PSTN.
    */
   async initiateCall(input: InitiateCallInput): Promise<InitiateCallResult> {
-    const response = await fetch(`${this.apiUrl}/api/v1/calls/initiate`, {
+    const data = await guardedJsonApiRequest<{ call_id: string; status: string }>({
+      url: `${this.apiUrl}/api/v1/calls/initiate`,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiToken}`,
       },
-      body: JSON.stringify({
+      body: {
         to: input.to,
         message: input.clientState?.message,
         mode: input.clientState?.mode ?? "conversation",
         internal_call_id: input.callId,
-      }),
+      },
+      allowedHostnames: [new URL(this.apiUrl).hostname],
+      auditContext: "voice-call.bandwidth.initiate-call",
+      errorPrefix: "ClawComm API error initiating call",
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`ClawComm API error initiating call: ${response.status} ${error}`);
-    }
-
-    const data = (await response.json()) as { call_id: string; status: string };
     return {
       providerCallId: data.call_id,
       status: "initiated",
@@ -305,16 +304,15 @@ export class BandwidthProvider implements VoiceCallProvider {
    * Hang up an active call via ClawComm API.
    */
   async hangupCall(input: HangupCallInput): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/api/v1/calls/${input.providerCallId}`, {
+    await guardedJsonApiRequest({
+      url: `${this.apiUrl}/api/v1/calls/${input.providerCallId}`,
       method: "DELETE",
       headers: { Authorization: `Bearer ${this.apiToken}` },
+      allowNotFound: true,
+      allowedHostnames: [new URL(this.apiUrl).hostname],
+      auditContext: "voice-call.bandwidth.hangup-call",
+      errorPrefix: "ClawComm API error hanging up call",
     });
-
-    if (!response.ok && response.status !== 404) {
-      // 404 means call already ended — that's OK
-      const error = await response.text();
-      throw new Error(`ClawComm API error hanging up call: ${response.status} ${error}`);
-    }
   }
 
   /**
@@ -323,19 +321,18 @@ export class BandwidthProvider implements VoiceCallProvider {
    * Jambonz handles the actual TTS synthesis and audio playback.
    */
   async playTts(input: PlayTtsInput): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/api/v1/calls/${input.providerCallId}/speak`, {
+    await guardedJsonApiRequest({
+      url: `${this.apiUrl}/api/v1/calls/${input.providerCallId}/speak`,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiToken}`,
       },
-      body: JSON.stringify({ text: input.text }),
+      body: { text: input.text },
+      allowedHostnames: [new URL(this.apiUrl).hostname],
+      auditContext: "voice-call.bandwidth.play-tts",
+      errorPrefix: "ClawComm API error playing TTS",
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`ClawComm API error playing TTS: ${response.status} ${error}`);
-    }
   }
 
   /**
@@ -366,22 +363,22 @@ export class BandwidthProvider implements VoiceCallProvider {
    */
   async getCallStatus(input: GetCallStatusInput): Promise<GetCallStatusResult> {
     try {
-      const response = await fetch(`${this.apiUrl}/api/v1/calls/${input.providerCallId}`, {
-        headers: { Authorization: `Bearer ${this.apiToken}` },
-      });
-
-      if (response.status === 404) {
-        return { status: "completed", isTerminal: true };
-      }
-
-      if (!response.ok) {
-        return { isUnknown: true, status: "unknown", isTerminal: false };
-      }
-
-      const data = (await response.json()) as {
+      const data = await guardedJsonApiRequest<{
         status: string;
         is_terminal?: boolean;
-      };
+      } | null>({
+        url: `${this.apiUrl}/api/v1/calls/${input.providerCallId}`,
+        method: "GET",
+        headers: { Authorization: `Bearer ${this.apiToken}` },
+        allowNotFound: true,
+        allowedHostnames: [new URL(this.apiUrl).hostname],
+        auditContext: "voice-call.bandwidth.get-call-status",
+        errorPrefix: "ClawComm API error getting call status",
+      });
+
+      if (!data) {
+        return { status: "completed", isTerminal: true };
+      }
 
       const statusMap: Record<string, CallState> = {
         initiated: "initiated",
