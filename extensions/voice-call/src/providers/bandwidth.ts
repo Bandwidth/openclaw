@@ -200,7 +200,9 @@ export class BandwidthProvider implements VoiceCallProvider {
           return { events: [normalized] };
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn("BandwidthProvider: failed to parse webhook event", err);
+    }
 
     return { events: [] };
   }
@@ -406,7 +408,8 @@ export class BandwidthProvider implements VoiceCallProvider {
         status: state,
         isTerminal,
       };
-    } catch {
+    } catch (err) {
+      console.warn("BandwidthProvider: error getting call status", err);
       return { status: "unknown", isTerminal: false, isUnknown: true };
     }
   }
