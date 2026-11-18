@@ -1,0 +1,15 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  schemaVersion: v1.0.0
+  name: openclaw
+  description: Your own personal AI assistant. Any OS. Any Platform. The lobster way. 🦞
+  annotations:
+    github.com/project-slug: Bandwidth/openclaw
+  organization: BW
+  costCenter: Research & Development
+  buildPlatform: GitHub Actions
+spec:
+  type: Infrastructure as Code
+  owner: github/band-innovation
+  lifecycle: Prototype
